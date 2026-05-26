@@ -1,0 +1,17 @@
+huggingface_cache/
+qdrant_db/
+qwen_qa_finetuned/
+ssh
+.cache/
+judicial_precedent2/
+Guideline/
+guideline_chunks9.json
+Mychatbot/.env
+Mychatbot/venv/
+Mychatbot/flask.log
+Mychatbot/ngrok.log
+Mychatbot/ngrok
+__pycache__/
+*.pyc
+260404_질의데이터셋_추가_최연우.json
+Mychatbot/fix_mysql.sh

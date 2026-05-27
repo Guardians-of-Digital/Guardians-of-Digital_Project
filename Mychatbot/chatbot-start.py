@@ -49,33 +49,72 @@ def situation():
     user_id = get_user_id(data)
     user_input = get_utterance(data)
  
+    prev_state = manager.get_state(user_id)
+
+    active_chat = prev_state.get("active_chat", False)
+ 
+    # 상담 중이 아닐 때 이상 입력 차단
+    if not active_chat:
+
+        invalid_words = [
+            "안녕", "하이", "ㅋㅋ",
+            "날씨", "뭐해"
+        ]
+
+        if any(word in user_input for word in invalid_words):
+
+            return jsonify({
+                "version": "2.0",
+                "template": {
+                    "outputs": [
+                        {
+                            "simpleText": {
+                                "text": "직장 내에서 겪은 상황을 입력해주세요."
+                            }
+                        }
+                    ]
+                }
+            })
+
     print(f"\n{'='*50}\n[situation] {user_id}: {user_input}\n{'='*50}\n")
    
     # DB에 유저 등록 (없으면 생성)
     get_or_create_user(user_id)
 
-    # 쿼리 확장
-    expanded = expand_query_rag(user_input)
+    prev_state = manager.get_state(user_id)
+    prev_situation = prev_state.get("situation", "")
 
+
+    if prev_state.get("reset", False):
+        merged_input = user_input
+    else:
+        merged_input = f"{prev_situation} {user_input}".strip()
+
+    expanded = expand_query_rag(merged_input)
     print(
         f"\n{'='*50}\n"
-        f"[situation] {user_id}: {user_input}\n"
+        f"[situation] {user_id}: {merged_input}\n"
 	f"관계: {expanded['relation']}\n"
 	f"{'='*50}\n"
 	)
  
-    # manager에 저장
-    manager.reset_state(user_id)
     manager.update_state(
         user_id,
-        situation=user_input,
+        situation=merged_input,
         expanded=expanded["expanded"],
         relation=expanded["relation"],
-    )
+        reset=False,
+        active_chat=True
+)
     manager.add_history(user_id, "user", user_input)
  
-    response_text = f"입력하신 내용을 이렇게 이해했어요:\n\n'{expanded['expanded']}'\n\n맞나요?"
-    
+    response_text = (f"입력하신 내용을 이렇게 이해했어요:\n\n"
+                    f"{expanded['expanded']}\n\n"
+                    f"📌수정이 필요한 경우 새로운 내용을 다시 입력해주세요.\n"
+                    f"📌내용이 맞다면 [네] 버튼을 눌러 분석을 진행해주세요.\n"
+                    f"📌새로운 상담을 시작하려면 [초기화] 버튼을 눌러주세요."         
+    )
+
     manager.add_history(user_id, "assistant", response_text)
  
     return jsonify({
@@ -89,11 +128,6 @@ def situation():
                     "label": "네",
                     "action": "block",
                     "blockId": "69df7b7d9e38951753f9bd73"   # 상황 분석 블록
-                },
-                {
-                    "label": "다시 입력",
-                    "action": "block",
-                    "blockId": "69fac84ffd39d41e08466e45"   # 추가 입력 블록
                 },
                 {
                     "label": "초기화",
@@ -101,74 +135,15 @@ def situation():
                     "blockId": "69cccfd0d3cf917d7a339478"  # 사용자상황입력 블록으로
 		}
             ]
-        }
-    })
-
-@app.route('/situation_add', methods=['POST'])
-def situation_add():
-    """2단계(선택): 사용자가 '다시 입력' 선택 → 추가 내용 받아서 이전 내용과 합치기"""
-    data = request.get_json()
-    user_id = get_user_id(data)
-    add_input = get_utterance(data)
- 
-    # 이전 상태 불러오기
-    state = manager.get_state(user_id)
-    prev_situation = state.get("situation", "")
- 
-    # 이전 내용 + 추가 내용 합치기
-    merged = f"{prev_situation} {add_input}".strip()
- 
-    # 다시 쿼리 확장
-    expanded = expand_query_rag(merged)
-
-    print(
-        f"\n{'='*50}\n"
-        f"[situation_add] {user_id}: {merged}\n"
-        f"관계: {expanded['relation']}\n"
-        f"{'='*50}\n"
-    )
- 
-    # manager 업데이트
-    manager.update_state(
-        user_id,
-        situation=merged,
-        expanded=expanded["expanded"],
-        relation=expanded["relation"],
-    )
-    manager.add_history(user_id, "user", add_input)
-
-    response_text = f"입력하신 내용을 이렇게 이해했어요:\n\n'{expanded['expanded']}'\n\n맞나요?"
-    
-    manager.add_history(user_id, "assistant", response_text)
- 
-    return jsonify({
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {"simpleText": {"text": response_text}}
-            ],
-            "quickReplies": [
-                {
-                    "label": "네",
-                    "action": "block",
-                    "blockId": "69df7b7d9e38951753f9bd73"   # 상황 분석 블록
-                },
-                {
-                    "label": "다시 입력",
-                    "action": "block",
-                    "blockId": "69fac84ffd39d41e08466e45"   # 추가 입력 블록
-                },
-	        {
-     		    "label": "초기화",
-    		    "action": "block",
-       		    "blockId": "69cccfd0d3cf917d7a339478"  # 사용자상황입력 블록으로
-    		}
-            ]
+        },
+        "contextControl": {
+            "block": {
+                "id": "6a15d28570e65519fcd31a4c"
+            }
         }
     })
 
 def send_callback(callback_url, result_text):
-
     response_data = {
         "version": "2.0",
         "template": {
@@ -184,6 +159,11 @@ def send_callback(callback_url, result_text):
                     "label": "확인했어요",
                     "action": "block",
                     "blockId": "69df2cf79e38951753f9a469"
+                },
+                {
+                    "label": "추가 분석",
+                    "action": "block",
+                    "blockId": "6a15e4786f076d72047228df"
                 }
             ]
         }
@@ -258,7 +238,7 @@ def user_save():
     # DB 저장
     history_id = save_history(user_id, relation, situation)
     save_result(history_id, result)
- 
+    
     # 세션 삭제
     manager.reset_state(user_id)
  
@@ -282,7 +262,12 @@ def end():
     user_id = get_user_id(data)
  
     manager.reset_state(user_id)
- 
+
+    manager.update_state(
+        user_id,
+        reset=True,
+        active_chat=False
+    )
     return jsonify({
         "version": "2.0",
         "template": {

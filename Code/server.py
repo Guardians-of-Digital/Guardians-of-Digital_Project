@@ -190,8 +190,7 @@ def generate_answer(user_input, docs):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=1024,
-	    #max_new_tokens=256,
+            max_new_tokens=2048,
 	    temperature=0.3,
             do_sample=True,
             repetition_penalty=1.1,
